@@ -1,0 +1,36 @@
+{{- if .Values.autoscaling.enabled -}}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  # ==============================================================================
+  # SCALE TARGET REFERENCE: What deployment is being autoscaled?
+  # ==============================================================================
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "demo-app.fullname" . }}
+    
+  # Bounds constraints on pod replicas (limits cost and sets safety boundaries)
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  
+  # ==============================================================================
+  # METRICS & TARGET DECISIONS: How does scaling trigger?
+  # ==============================================================================
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          # Utilization: Triggers scale-up when average pod CPU usage (relative to 
+          # its resource requests) exceeds the specified target percentage.
+          # Formula: DesiredReplicas = ceil(CurrentReplicas * (CurrentCPU / TargetCPU))
+          # IMPORTANT: For HPA to function, CPU resource requests MUST be configured 
+          # on the target container, otherwise Kubernetes cannot calculate utilization.
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}

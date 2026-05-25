@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  # ==============================================================================
+  # SERVICE TYPES: Internal vs External Routing Boundaries
+  # ==============================================================================
+  # - ClusterIP (default): Allocates a virtual IP that is ONLY reachable from 
+  #   inside the cluster. This is standard in production when fronted by an 
+  #   Ingress Controller (like our NGINX setup), as it limits exposure and 
+  #   retains internal load-balancing control.
+  # - NodePort: Exposes the service on each node's IP at a static port (30000-32767).
+  # - LoadBalancer: Leverages cloud infrastructure controllers (e.g. AWS ELB, GCP LB) 
+  #   to provision a real public IP address.
+  type: {{ .Values.service.type }}
+  
+  ports:
+    - name: http
+      # The port exposed externally by this Service resource itself
+      port: {{ .Values.service.port }}
+      
+      # The port on which our container application is listening (8080)
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      
+  # Route traffic exclusively to pods matching these selector labels
+  selector:
+    {{- include "demo-app.selectorLabels" . | nindent 4 }}

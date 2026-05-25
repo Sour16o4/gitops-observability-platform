@@ -1,0 +1,165 @@
+name: Continuous Integration & GitOps Handoff
+
+# ==============================================================================
+# TRIGGERS: Scoping execution to target workloads
+# ==============================================================================
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'helm/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'app/**'
+      - 'helm/**'
+
+# ==============================================================================
+# PERMISSIONS: Enforcing Least Privilege Access
+# ==============================================================================
+permissions:
+  # contents: write
+  #   → Required to commit the updated image tag values.yaml back to Git.
+  contents: write
+  # packages: write
+  #   → Required to authenticate and push container images to GHCR (GitHub Container Registry).
+  packages: write
+
+jobs:
+  ci:
+    name: Build, Scan & Release
+    runs-on: ubuntu-latest
+
+    steps:
+      # ========================================================================
+      # STAGE 1: Code Retrieval
+      # ========================================================================
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+        with:
+          # Fetch all history so we can extract git commit data accurately
+          fetch-depth: 0
+
+      # ========================================================================
+      # STAGE 2: Kubernetes Manifest Validation (Kubeconform)
+      # ========================================================================
+      - name: Dry-Render Helm Chart Templates
+        run: |
+          helm template demo-app helm/demo-app > rendered-manifests.yaml
+
+      - name: Validate Kubernetes Manifest Schemas (Kubeconform)
+        run: |
+          # Use Kubeconform via Docker to validate schema compliance.
+          # -summary: Displays a summary of the validation runs.
+          # -strict: Fails if there are any schema errors or undocumented fields.
+          docker run --rm \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            ghcr.io/yannh/kubeconform:latest-alpine \
+            -summary -strict rendered-manifests.yaml
+
+      # ========================================================================
+      # STAGE 3: Helm Chart Validation (Lint)
+      # ========================================================================
+      - name: Lint Helm Chart
+        run: |
+          helm lint helm/demo-app
+
+      # ========================================================================
+      # STAGE 4: Build setup and login
+      # ========================================================================
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Using the built-in ephemeral GITHUB_TOKEN to avoid exposing static credentials
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Short Git SHA
+        id: sha
+        run: |
+          echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      # ========================================================================
+      # STAGE 5: Docker Build (Cached and Scanned Local-first)
+      # ========================================================================
+      - name: Build Image (Local Cache Only)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app
+          # push: false
+          #   → DO NOT push the image to GHCR yet. We must run security tests first.
+          push: false
+          # load: true
+          #   → Load the compiled image directly into the runner's local Docker engine.
+          #   → Allows subsequent scanning tools (Trivy) to analyze the image locally.
+          load: true
+          tags: |
+            ghcr.io/${{ github.repository }}/demo-app:sha-${{ steps.sha.outputs.short }}
+          # Enable GitHub Actions cache backend to speed up successive builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ========================================================================
+      # STAGE 6: Container Security Vulnerability Scan (Trivy)
+      # ========================================================================
+      - name: Scan Container Image for CVEs (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/demo-app:sha-${{ steps.sha.outputs.short }}
+          format: 'table'
+          # exit-code: '1'
+          #   → Fail the pipeline and block deployment if severe vulnerabilities exist.
+          exit-code: '1'
+          # Ignore vulnerabilities that do not have a registered patch/fix to avoid noise.
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          # Target only CRITICAL severity CVEs
+          severity: 'CRITICAL'
+
+      # ========================================================================
+      # STAGE 7: Release Image to Registry
+      # ========================================================================
+      - name: Push Verified Image to GHCR
+        # Only push on merge to main, not on pull request dry-runs
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker push ghcr.io/${{ github.repository }}/demo-app:sha-${{ steps.sha.outputs.short }}
+
+      # ========================================================================
+      # STAGE 8: GitOps Image Tag Update
+      # ========================================================================
+      - name: Overwrite Image Tag in Helm values.yaml
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Use sed with a range address to target the "tag:" field strictly
+          # inside the "image:" configuration block in values.yaml.
+          # Scopes the replacement to avoid modifying other fields containing "tag:".
+          sed -i '/image:/,/tag:/ { s/\(tag: \).*/\1"sha-'${{ steps.sha.outputs.short }}'"/ }' helm/demo-app/values.yaml
+
+      # ========================================================================
+      # STAGE 9: GitOps State Handoff
+      # ========================================================================
+      - name: Commit and Push Image Tag Update
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # Configure git author to represent the automated CI agent
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add helm/demo-app/values.yaml
+          
+          # [skip ci] is appended to the commit message to prevent this automated 
+          # commit from triggering another GitHub Actions run, avoiding infinite loops.
+          git commit -m "chore(gitops): update demo-app image tag to sha-${{ steps.sha.outputs.short }} [skip ci]"
+          
+          git push origin main

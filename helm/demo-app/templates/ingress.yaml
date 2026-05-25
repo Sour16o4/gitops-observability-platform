@@ -1,0 +1,48 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+  # ==============================================================================
+  # ANNOTATIONS: Fine-tuning Ingress behavior
+  # ==============================================================================
+  # Annotations are key-value pairs stored on the resource metadata. They are watched
+  # by the Ingress Controller (NGINX) to inject custom configurations directly into the
+  # generated nginx.conf proxy file (e.g. rewrite rules, CORS settings, rate limits).
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  # ==============================================================================
+  # INGRESS CLASS: Directing traffic to the correct routing engine
+  # ==============================================================================
+  # A cluster can run multiple ingress controllers concurrently (e.g. NGINX for external,
+  # Traefik for internal, Kong for APIs). ingressClassName acts as a router selection
+  # flag, pointing this rule directly to the "nginx" controller we configured in Phase 1.
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            # PathType determines how URLs match Ingress path definitions:
+            # - Prefix: Matches based on URL path prefix split by '/' (e.g. / matches all).
+            # - Exact: Matches the URL path exactly (e.g. /demo only matches /demo, not /demo/app).
+            # - ImplementationSpecific: Matches according to the controller's custom rules.
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "demo-app.fullname" $ }}
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

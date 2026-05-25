@@ -1,0 +1,35 @@
+{{- if .Values.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  # ==============================================================================
+  # LABELS: The secret sauce of Prometheus Operator Autodiscovery
+  # ==============================================================================
+  # The Prometheus Operator does not scrape every ServiceMonitor in the cluster automatically.
+  # Instead, the Prometheus deployment specifies a label selector in its configuration
+  # (e.g. serviceMonitorSelector: {matchLabels: {release: prometheus-stack}}).
+  # If our ServiceMonitor lacks this specific label, Prometheus will completely ignore it.
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  # ==============================================================================
+  # ENDPOINTS: What ports and paths to scrape?
+  # ==============================================================================
+  endpoints:
+    - port: http               # Refers to the named port "http" in our Service resource
+      interval: {{ .Values.serviceMonitor.interval }}
+      path: {{ .Values.serviceMonitor.path }}
+      
+  # ==============================================================================
+  # SELECTOR: Which services do we monitor?
+  # ==============================================================================
+  # The ServiceMonitor matches Kubernetes Services based on these labels.
+  # Once matched, it resolves the IPs of the underlying pods (Endpoints) and starts scraping them.
+  selector:
+    matchLabels:
+      {{- include "demo-app.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,122 @@
+# ==============================================================================
+# values.yaml — Configurable parameters for the demo-app Helm Chart
+# ==============================================================================
+# Every field in this file is exposed to allow environment-specific overrides
+# (e.g. smaller CPU allocations in dev/local, larger replicas and limits in prod).
+# ==============================================================================
+
+# -- The number of pod replicas to run by default.
+# In a high-availability (HA) production environment, this should be >= 2 
+# to ensure scheduling across multiple worker nodes (anti-affinity) and to 
+# avoid downtime during rolling upgrades.
+replicaCount: 2
+
+image:
+  # -- The Docker image repository path.
+  # For locally built images in KIND, this matches the tag loaded into Docker.
+  # In production, this would point to a secure registry like GHCR or ECR.
+  repository: local/demo-app
+  
+  # -- Overrides the image tag. If not set, chart.appVersion is used.
+  # It is best practice to use git SHAs or explicit semver versions as tags.
+  # NEVER use "latest" in production, as it breaks rolling rollbacks and caching.
+  tag: "test"
+  
+  # -- Image pull policy determines when the kubelet pulls images from the registry.
+  # - IfNotPresent: Only download the image if it doesn't exist on the host node.
+  #   Highly efficient for local dev (KIND) and stable production tags.
+  # - Always: Force download the image on every pod launch. Highly recommended for 
+  #   "latest" or mutable tag strategies to avoid out-of-sync node deployments.
+  pullPolicy: IfNotPresent
+
+# -- Additional environment variables to inject into the application container.
+# Used for runtime dynamic configuration (e.g. database credentials, toggle switches).
+env:
+  - name: PORT
+    value: "8080"
+  - name: GO_ENV
+    value: "production"
+
+# -- Service configuration exposes the pods internally or externally.
+service:
+  # -- Service Type determines how the service is reached:
+  # - ClusterIP: Exposes the service on a private IP inside the cluster (Default).
+  #   Perfect when fronted by an Ingress Controller (our current setup).
+  # - NodePort: Exposes the service on a static port on each Node's IP.
+  # - LoadBalancer: Provisions a cloud load balancer (not supported natively in KIND).
+  type: ClusterIP
+  
+  # -- The port exposed by the service resource itself.
+  port: 80
+  
+  # -- The port on which the container application is listening.
+  targetPort: 8080
+
+# -- Ingress configuration maps external HTTP/S traffic to internal Services.
+ingress:
+  # -- Whether to provision an Ingress resource for this application.
+  enabled: true
+  
+  # -- Tells the API server which Ingress Controller handles this resource.
+  # "nginx" targets the NGINX Ingress Controller installed in Phase 1.
+  className: nginx
+  
+  # -- Annotations to customize NGINX behavior.
+  annotations:
+    # Rewrite target annotation allows us to map path /demo to the app's root /
+    # nginx.ingress.kubernetes.io/rewrite-target: /
+    kubernetes.io/ingress.class: "nginx"
+  
+  # -- Ingress host configurations.
+  hosts:
+    - host: localhost
+      paths:
+        - path: /
+          pathType: Prefix
+
+# -- Compute resource allocations for the container.
+# Under-provisioning causes performance degradation; over-provisioning wastes money.
+# Hard rule: ALWAYS define both requests and limits in production.
+resources:
+  # -- Requests define the MINIMUM CPU/Memory the scheduler reserves for the pod.
+  # If a node doesn't have these resources available, the pod will remain in "Pending".
+  requests:
+    cpu: 10m       # 0.01 CPU core (low allocation for local dev cluster efficiency)
+    memory: 16Mi   # 16 Megabytes of memory
+    
+  # -- Limits define the MAXIMUM CPU/Memory the container is allowed to consume.
+  # - CPU Limits: Throttles CPU execution if exceeded (does not terminate container).
+  # - Memory Limits: Trigger Out-Of-Memory (OOM) kills (terminates container) if exceeded.
+  limits:
+    cpu: 100m      # 0.1 CPU core
+    memory: 64Mi   # 64 Megabytes of memory
+
+# -- Horizontal Pod Autoscaling (HPA) dynamically scales replicas based on load metrics.
+# Useful for absorbing traffic spikes automatically and scaling down to save costs.
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  
+  # -- Target CPU metric threshold to trigger scaling decisions.
+  # Formula: DesiredReplicas = ceil(CurrentReplicas * (CurrentCPU / TargetCPU))
+  # If average pod CPU usage hits 80%, the HPA will launch new pods.
+  targetCPUUtilizationPercentage: 80
+
+# -- ServiceMonitor configures Prometheus Operator to scrape the pod metrics endpoint.
+serviceMonitor:
+  # -- Whether to create a ServiceMonitor resource.
+  enabled: true
+  
+  # -- How often Prometheus scrapes the application metrics endpoint.
+  # Short intervals (e.g. 5s) give high granularity but increase storage/scraping load.
+  # Long intervals (e.g. 60s) reduce load but delay alerting response.
+  interval: 15s
+  
+  # -- Path of the metrics endpoint on the container.
+  path: /metrics
+  
+  # -- Label selectors required for the Prometheus Operator to discover this ServiceMonitor.
+  # The prometheus-stack chart is configured to search for monitors matching specific labels.
+  labels:
+    release: prometheus-stack

@@ -1,0 +1,44 @@
+# KIND Cluster Configuration — 1 control-plane + 2 workers
+# KIND runs K8s nodes as Docker containers, using upstream Kubernetes binaries.
+# This gives identical API/scheduling behavior to production clusters.
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+
+networking:
+  podSubnet: "10.244.0.0/16"      # CIDR for pod IPs (~65k addresses)
+  serviceSubnet: "10.96.0.0/16"   # CIDR for ClusterIP virtual IPs
+  disableDefaultCNI: false         # Use kindnet (sufficient for local dev)
+
+nodes:
+  # --- Control Plane ---
+  # Runs: apiserver, scheduler, controller-manager, etcd
+  # In prod: 3+ control planes for HA. In KIND: 1 is fine.
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            # Label tells NGINX Ingress "schedule your pods on this node"
+            # Without it, extraPortMappings forward traffic to nothing.
+            node-labels: "ingress-ready=true"
+    # extraPortMappings: Docker port bindings from host → KIND container.
+    # In cloud: a LoadBalancer gives you a real external IP.
+    # In KIND: no cloud LB exists, so we bind host ports directly.
+    # Flow: localhost:80 → KIND container:80 → NGINX Ingress → app
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+        listenAddress: "127.0.0.1"  # localhost only, not exposed to LAN
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+        listenAddress: "127.0.0.1"
+
+  # --- Worker Nodes ---
+  # 2 workers lets you observe: pod scheduling across nodes,
+  # rolling updates, node drain behavior, anti-affinity rules.
+  - role: worker
+  - role: worker

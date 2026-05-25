@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  # Dynamic replicas driven by values.yaml (or scale constraints set by HPA)
+  # In production, we omit this when HPA is active to prevent Helm conflicts during deployments
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "demo-app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "demo-app.selectorLabels" . | nindent 8 }}
+        # Exposing labels for Prometheus scraping autodiscovery mechanisms
+        app: {{ include "demo-app.name" . }}
+    spec:
+      # Container-level host security mitigations (highly critical in enterprise)
+      securityContext:
+        # Prevent starting containers that require root access (UID 0)
+        runAsNonRoot: true
+        # Matches our Dockerfile unprivileged user UID (10001)
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          
+          # Inject configurations from values.yaml env list
+          env:
+            {{- toYaml .Values.env | nindent 12 }}
+            
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+              
+          # ====================================================================
+          # PROBES: Crucial for self-healing and zero-downtime upgrades
+          # ====================================================================
+          # Liveness Probe: Evaluates if the container is dead or in a deadlocked state.
+          # - If this fails, the kubelet kills the container and restarts it according to the restartPolicy.
+          # - Protects against: Infinite loops, thread lockups, out-of-memory states that freeze the app.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5  # Give the app 5 seconds to boot up before probing
+            periodSeconds: 10       # Probe every 10 seconds
+            timeoutSeconds: 2       # If the probe takes >2 seconds, mark it as a failure
+            failureThreshold: 3     # Restart container after 3 consecutive failures
+            
+          # Readiness Probe: Evaluates if the pod is ready to accept incoming user network traffic.
+          # - If this fails, the service controller REMOVES the pod's IP address from the Endpoint slice.
+          # - Protects against: Attempting to route user requests to a pod that is still initializing
+          #   connections or loading system configurations.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            successThreshold: 1     # Mark as healthy after 1 success
+            failureThreshold: 3     # Remove from Service endpoint after 3 failures
+            
+          # ====================================================================
+          # RESOURCES: Grid isolation boundaries for scheduler efficiency
+          # ====================================================================
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+            
+          # Strict runtime container sandbox permissions
+          securityContext:
+            # Mount container filesystem strictly as read-only.
+            # Prevents exploits from writing malicious binaries to /tmp or overwriting local configs.
+            readOnlyRootFilesystem: true
+            # Prevent the container process from escalating capabilities beyond parent namespace.
+            allowPrivilegeEscalation: false
+            # Drop all kernel capability flags (chown, kill, dac_override) to prevent low-level exploits.
+            capabilities:
+              drop:
+                - ALL

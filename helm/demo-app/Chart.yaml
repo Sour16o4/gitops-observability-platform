@@ -1,0 +1,12 @@
+apiVersion: v2
+name: demo-app
+description: A production-grade Helm chart for the Go telemetry demo application.
+type: application
+
+# This is the chart version. This version number should be incremented each time you make changes
+# to the chart itself (the templates or values.yaml).
+version: 0.1.0
+
+# This is the version number of the application being deployed. This version number should be
+# incremented each time you build and push a new application image (e.g. via CI).
+appVersion: "1.0.0"
