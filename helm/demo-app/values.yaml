@@ -106,9 +106,7 @@ autoscaling:
 # -- ServiceMonitor configures Prometheus Operator to scrape the pod metrics endpoint.
 serviceMonitor:
   # -- Whether to create a ServiceMonitor resource.
-  # NOTE: Disabled until Prometheus Operator CRDs are installed (Phase 5).
-  # Re-enable once kube-prometheus-stack is deployed.
-  enabled: false
+  enabled: true
   
   # -- How often Prometheus scrapes the application metrics endpoint.
   # Short intervals (e.g. 5s) give high granularity but increase storage/scraping load.
