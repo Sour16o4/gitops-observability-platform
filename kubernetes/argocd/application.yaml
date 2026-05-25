@@ -1,0 +1,66 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-app
+  # ArgoCD looks for Application resources in the namespace where the controller is running (argocd)
+  namespace: argocd
+spec:
+  # ============================================================================
+  # PROJECT CONFIGURATION: Access Control
+  # ============================================================================
+  # The "default" project is pre-created by ArgoCD and permits deployments 
+  # to any namespace or destination. In multi-tenant environments, you define
+  # custom Projects to lock down specific teams to designated namespaces.
+  project: default
+
+  # ============================================================================
+  # SOURCE CONFIGURATION: What should be running?
+  # ============================================================================
+  source:
+    # Point directly to your personal portfolio Git repository
+    repoURL: 'https://github.com/Sour16o4/gitops-observability-platform.git'
+    
+    # Target the production branch. ArgoCD continuously monitors this branch for changes.
+    targetRevision: main
+    
+    # Path relative to the Git repository root where the Helm templates reside
+    path: helm/demo-app
+    
+    # Enable Helm parameters inside ArgoCD to override default values.yaml values if desired
+    helm:
+      # If you wanted to override variables here, you would define "parameters" or "valueFiles".
+      # Since our values.yaml is already fully configured, no overrides are needed here.
+      valueFiles:
+        - values.yaml
+
+  # ============================================================================
+  # DESTINATION CONFIGURATION: Where should it deploy?
+  # ============================================================================
+  destination:
+    # Represents the local cluster API server where ArgoCD is running
+    server: 'https://kubernetes.default.svc'
+    
+    # Target namespace to deploy your application workloads
+    namespace: default
+
+  # ============================================================================
+  # SYNC POLICY: The core GitOps reconciliation loop
+  # ============================================================================
+  syncPolicy:
+    # Automated sync triggers reconciliation as soon as ArgoCD detects a difference
+    # between the Git repository state and the active cluster state.
+    automated:
+      # prune: true
+      #   → Automatically deletes resources from the cluster when they are deleted from Git.
+      #   → Prevents resource leaks and "orphaned" resources in your namespaces.
+      prune: true
+      
+      # selfHeal: true
+      #   → Automatically detects manual "drift" (when someone runs kubectl edit or scale).
+      #   → Overwrites manual changes instantly to guarantee the cluster matches the Git state.
+      #   → Prevents manual configuration drift in production!
+      selfHeal: true
+      
+    syncOptions:
+      # Pre-creates the destination namespace if it does not already exist
+      - CreateNamespace=true
