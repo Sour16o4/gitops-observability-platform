@@ -1,67 +1,82 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# port-forward-all.sh — Forward all platform services to localhost
+# port-forward-all.sh — Expose platform services to your local machine
 # ==============================================================================
-# Kubernetes services are internal by default (ClusterIP). Port-forwarding
-# creates a tunnel from your host machine into the cluster so you can
-# access dashboards and APIs from your browser.
-#
-# Usage: bash scripts/port-forward-all.sh
-# Stop:  Ctrl+C (kills all background port-forwards)
+# This script launches background kubectl port-forwards to expose:
+#   - ArgoCD Console:  https://localhost:8080
+#   - Grafana UI:      http://localhost:3000
+#   - Prometheus API:  http://localhost:9090
 # ==============================================================================
 
 set -euo pipefail
 
 CYAN='\033[0;36m'
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
-info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
-ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
+info() { echo -e "${CYAN}[INFO]${NC} $*"; }
+ok()   { echo -e "${GREEN}[OK]${NC}   $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+fail() { echo -e "${RED}[FAIL]${NC} $*"; exit 1; }
 
-# Array to track background PIDs for cleanup
-PIDS=()
+# Ensure we're in the right context
+info "Verifying cluster context..."
+ctx=$(kubectl config current-context 2>/dev/null || true)
+if [[ "$ctx" != "kind-gitops-platform" ]]; then
+    fail "Wrong context: '${ctx}'. Expected 'kind-gitops-platform'."
+fi
 
-cleanup() {
-    echo ""
-    info "Stopping all port-forwards..."
-    for pid in "${PIDS[@]}"; do
-        kill "$pid" 2>/dev/null || true
-    done
-    ok "All port-forwards stopped"
-}
-trap cleanup EXIT INT TERM
+# Function to safely start a port-forward
+start_forward() {
+    local svc=$1
+    local namespace=$2
+    local port=$3
+    local local_port=$4
+    local name=$5
 
-# Port-forward helper: starts kubectl port-forward in background
-# Arguments: namespace, service-name, local-port, remote-port, description
-pf() {
-    local ns=$1 svc=$2 local_port=$3 remote_port=$4 desc=$5
-    # Check if the service exists before trying to forward
-    if kubectl get svc "$svc" -n "$ns" &>/dev/null; then
-        kubectl port-forward -n "$ns" "svc/$svc" "${local_port}:${remote_port}" &>/dev/null &
-        PIDS+=($!)
-        ok "${desc}: http://localhost:${local_port}"
+    # Check if already listening on the local port
+    if ss -tulpn 2>/dev/null | grep -q ":${local_port} "; then
+        warn "${name} port-forward is already active or port ${local_port} is in use."
+        return
+    fi
+
+    info "Starting port-forward for ${name} to http://localhost:${local_port}..."
+    kubectl port-forward "svc/${svc}" -n "${namespace}" "${local_port}:${port}" &>/dev/null &
+    
+    # Wait to verify it started successfully
+    sleep 2
+    if ss -tulpn 2>/dev/null | grep -q ":${local_port} "; then
+        ok "${name} is accessible at http://localhost:${local_port} (via svc/${svc})"
     else
-        info "Skipping ${desc} (service ${svc} not found in ${ns})"
+        fail "Failed to establish port-forward for ${name}."
     fi
 }
 
-echo ""
-echo "=============================================="
-echo "  Port Forwards — GitOps Platform"
-echo "=============================================="
-echo ""
-
-# Phase 4: ArgoCD
-pf argocd    argocd-server           8080 443  "ArgoCD UI"
-
-# Phase 5: Monitoring
-pf monitoring prometheus-kube-prometheus-prometheus 9090 9090 "Prometheus"
-pf monitoring prometheus-grafana                    3000 80   "Grafana"
-
-echo ""
-info "Press Ctrl+C to stop all port-forwards"
+echo "=================================================="
+echo "  GitOps Observability Platform — Port Forwarder"
+echo "=================================================="
 echo ""
 
-# Wait forever (until Ctrl+C)
-wait
+# 1. ArgoCD
+start_forward "argocd-server" "argocd" "443" "8080" "ArgoCD Web UI"
+echo -e "   -> Username: ${GREEN}admin${NC}"
+echo -e "   -> Password: ${GREEN}7o28ksEDomjvLj0a${NC}"
+echo ""
+
+# 2. Grafana
+start_forward "prometheus-stack-grafana" "monitoring" "80" "3000" "Grafana Dashboards"
+echo -e "   -> Username: ${GREEN}admin${NC}"
+echo -e "   -> Password: ${GREEN}admin${NC}"
+echo ""
+
+# 3. Prometheus
+start_forward "prometheus-stack-kube-prom-prometheus" "monitoring" "9090" "9090" "Prometheus Server"
+echo ""
+
+echo "=================================================="
+ok "All port-forwards initialized in the background."
+echo "To terminate them all, run: pkill -f 'port-forward'"
+echo "=================================================="
+echo ""
