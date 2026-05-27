@@ -1,0 +1,22 @@
+{{- if gt (int .Values.replicaCount) 1 }}
+# ==============================================================================
+# PodDisruptionBudget ensures at least 1 pod remains available during
+# voluntary disruptions (node drain, cluster upgrade, scaling operations).
+# Without a PDB, Kubernetes can evict ALL pods simultaneously during maintenance,
+# causing a full outage of the application.
+# ==============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  # minAvailable: 1
+  #   → At least 1 pod must stay running at all times during voluntary disruptions.
+  #   → This means if you have 2 replicas, only 1 can be evicted at a time.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "demo-app.selectorLabels" . | nindent 6 }}
+{{- end }}

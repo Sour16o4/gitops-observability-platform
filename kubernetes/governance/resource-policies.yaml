@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: default-quota
+  namespace: default
+  labels:
+    app.kubernetes.io/managed-by: gitops-platform
+spec:
+  hard:
+    # Maximum total CPU requests that can be allocated across all pods in this namespace
+    requests.cpu: "2"
+    # Maximum total memory requests
+    requests.memory: 1Gi
+    # Maximum total CPU limits
+    limits.cpu: "4"
+    # Maximum total memory limits
+    limits.memory: 2Gi
+    # Maximum number of pods allowed in this namespace
+    pods: "20"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+  namespace: default
+  labels:
+    app.kubernetes.io/managed-by: gitops-platform
+spec:
+  limits:
+    - type: Container
+      # Default limits applied to containers that don't specify their own
+      default:
+        cpu: 200m
+        memory: 128Mi
+      # Default requests applied to containers that don't specify their own
+      defaultRequest:
+        cpu: 50m
+        memory: 32Mi
+      # Absolute maximum a single container can request
+      max:
+        cpu: "1"
+        memory: 512Mi
+      # Absolute minimum a single container can request
+      min:
+        cpu: 10m
+        memory: 8Mi

@@ -116,7 +116,7 @@ Run the background forwarder to make all admin dashboards accessible:
 ```bash
 ./scripts/port-forward-all.sh
 ```
-* **ArgoCD Dashboard**: `https://localhost:8080` (Credentials: `admin` / `7o28ksEDomjvLj0a`)
+* **ArgoCD Dashboard**: `https://localhost:8080` (Username: `admin` / Password: run `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d`)
 * **Grafana Dashboards**: `http://localhost:3000` (Credentials: `admin` / `admin`)
 * **Prometheus API**: `http://localhost:9090`
 

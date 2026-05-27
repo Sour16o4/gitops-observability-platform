@@ -61,8 +61,9 @@ echo ""
 
 # 1. ArgoCD
 start_forward "argocd-server" "argocd" "443" "8080" "ArgoCD Web UI"
+ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 -d 2>/dev/null || echo "<secret not found>")
 echo -e "   -> Username: ${GREEN}admin${NC}"
-echo -e "   -> Password: ${GREEN}7o28ksEDomjvLj0a${NC}"
+echo -e "   -> Password: ${GREEN}${ARGOCD_PASS}${NC}"
 echo ""
 
 # 2. Grafana

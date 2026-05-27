@@ -1,0 +1,64 @@
+{{- if .Values.serviceMonitor.enabled }}
+# ==============================================================================
+# PrometheusRule defines alerting conditions evaluated by the Prometheus engine.
+# When a condition fires, Prometheus sends an alert to Alertmanager, which can
+# then route it to Slack, PagerDuty, email, or other notification channels.
+# ==============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+    # Required for Prometheus Operator to discover this rule
+    release: prometheus-stack
+spec:
+  groups:
+    - name: demo-app.rules
+      rules:
+
+        # ALERT: High Error Rate
+        # Fires when more than 5% of HTTP requests return 5xx status codes
+        # over a sustained 5-minute window.
+        - alert: DemoAppHighErrorRate
+          expr: |
+            (
+              sum(rate(http_requests_total{app_kubernetes_io_name="demo-app", status=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{app_kubernetes_io_name="demo-app"}[5m]))
+            ) * 100 > 5
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Demo App error rate is above 5%"
+            description: "The HTTP 5xx error rate has exceeded 5% for the last 2 minutes. Current value: {{ "{{ $value }}" }}%"
+
+        # ALERT: High Latency (p99)
+        # Fires when the 99th percentile response time exceeds 1 second.
+        - alert: DemoAppHighLatency
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le) (rate(http_request_duration_seconds_bucket{app_kubernetes_io_name="demo-app"}[5m]))
+            ) > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Demo App p99 latency exceeds 1 second"
+            description: "The 99th percentile latency has been above 1s for 5 minutes. Current value: {{ "{{ $value }}" }}s"
+
+        # ALERT: Pod Unavailable
+        # Fires when fewer pods are available than the desired replica count.
+        - alert: DemoAppPodUnavailable
+          expr: |
+            kube_deployment_status_replicas_available{deployment="{{ include "demo-app.fullname" . }}"} 
+            < 
+            kube_deployment_spec_replicas{deployment="{{ include "demo-app.fullname" . }}"}
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Demo App has fewer available replicas than desired"
+            description: "Expected {{ "{{ $value }}" }} replicas but fewer are available for more than 3 minutes."
+{{- end }}

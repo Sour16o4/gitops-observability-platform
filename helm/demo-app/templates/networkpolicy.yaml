@@ -1,0 +1,37 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "demo-app.fullname" . }}
+  labels:
+    {{- include "demo-app.labels" . | nindent 4 }}
+spec:
+  # Apply this policy to all pods matching the demo-app selector labels
+  podSelector:
+    matchLabels:
+      {{- include "demo-app.selectorLabels" . | nindent 6 }}
+
+  # ===========================================================================
+  # INGRESS RULES: Define WHO is allowed to send traffic TO the demo-app pods.
+  # All traffic NOT matching these rules is DENIED by default (zero-trust model).
+  # ===========================================================================
+  policyTypes:
+    - Ingress
+
+  ingress:
+    # Rule 1: Allow traffic from the NGINX Ingress Controller (user HTTP requests)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}
+
+    # Rule 2: Allow traffic from Prometheus (metrics scraping via ServiceMonitor)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.targetPort }}

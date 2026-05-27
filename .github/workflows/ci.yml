@@ -69,6 +69,20 @@ jobs:
           helm lint helm/demo-app
 
       # ========================================================================
+      # STAGE 3.5: Go Unit Tests
+      # ========================================================================
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Run Go Unit Tests
+        working-directory: ./app
+        run: |
+          go test -v -race -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
+
+      # ========================================================================
       # STAGE 4: Build setup and login
       # ========================================================================
       - name: Set up Docker Buildx
