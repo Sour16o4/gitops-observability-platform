@@ -4,6 +4,9 @@ A production-grade, local Kubernetes platform built using a multi-node **KIND** 
 
 It showcases how to take a custom containerized application from source code to production deployment, featuring automated testing, CVE vulnerability gating, GitOps continuous delivery with self-healing, and dynamic RED metrics/log aggregation.
 
+## 📊 Live Grafana Telemetry Dashboard
+![Grafana RED Metrics Dashboard](docs/images/grafana-dashboard.png)
+
 ---
 
 ## 📐 Architecture & Traffic Flow
