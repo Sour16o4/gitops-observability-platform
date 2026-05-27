@@ -15,24 +15,24 @@ The diagram below illustrates the end-to-end flow of code (CI/CD), external user
 
 ```mermaid
 graph TD
-    %% CLI/Git Ops
-    subgraph Developer Workflow
+    %% Developer CI Workflow
+    subgraph "Developer Workflow"
         Dev[Developer] -->|Git Push| GitHub[GitHub Repo]
         GitHub -->|Triggers CI| GHA[GitHub Actions]
-        GHA -->|1. Lint & Validate| GHA
-        GHA -->|2. Docker Build & Scan| GHA
+        GHA -->|1. Lint and Validate| Lint[Schema Check]
+        GHA -->|2. Docker Build and Scan| Scan[Trivy CVE Gate]
         GHA -->|3. Push Image| GHCR[GitHub Container Registry]
         GHA -->|4. Update Image Tag| GitHub
     end
 
     %% GitOps Loop
-    subgraph GitOps (ArgoCD)
-        Argo[ArgoCD Controller] -->|Polls Repo & Syncs State| GitHub
+    subgraph "GitOps - ArgoCD"
+        Argo[ArgoCD Controller] -->|Polls Repo and Syncs State| GitHub
         Argo -->|Deploys/Updates| K8s[KIND Cluster]
     end
 
-    %% Ingress & App
-    subgraph Kubernetes Runtime
+    %% Ingress and App
+    subgraph "Kubernetes Runtime"
         HostTraffic[curl localhost:80] -->|Port Map| NginxIng[NGINX Ingress Controller]
         NginxIng -->|Routes Traffic| AppSvc[ClusterIP Service]
         AppSvc -->|Load Balances| Pod1[Go App Pod A]
@@ -40,13 +40,13 @@ graph TD
     end
 
     %% Observability
-    subgraph Observability Stack
+    subgraph "Observability Stack"
         Prom[Prometheus Server] -->|Scrapes /metrics via ServiceMonitor| Pod1
         Prom -->|Scrapes /metrics via ServiceMonitor| Pod2
         Promtail[Promtail DaemonSet] -->|Tail Pod Logs| Pod1
         Promtail -->|Tail Pod Logs| Pod2
         Promtail -->|Ships Logs| Loki[Loki Single Binary]
-        
+
         Grafana[Grafana Dashboard] -->|Queries Metrics| Prom
         Grafana -->|Queries Logs| Loki
     end
